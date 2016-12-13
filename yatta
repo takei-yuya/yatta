@@ -1,0 +1,114 @@
+#!/usr/bin/env bash
+
+set -ue
+
+source "$(dirname "${0}")/lib.sh"
+
+HISTORY_FILE="${HOME}/.yatta"
+
+printf -v TAB '\t'
+printf -v CR '\r'
+printf -v LF '\n'
+
+List() {
+  # TODO: getopt
+  # TODO: date format
+  local display="relative_time"
+  if [ "${1-}" = "-n" ]; then
+    display="echo"
+  fi
+
+  <"${HISTORY_FILE}" \
+  sort -k1,1 -n -r | sort -k2,2 -u | sort -k1,1 -n | \
+  while read line; do
+    local IFS="${TAB}"
+    set -- ${line}
+    local when="$(${display} "${1}")"
+    local what="${2}"
+    local memo="${3-}"
+    echo "${when}${TAB}${what}${TAB}${memo}"
+  done
+}
+
+Hist() {
+  # TODO: getopt
+  # TODO: date format
+  local display="simple_time"
+
+  <"${HISTORY_FILE}" \
+  sort -k1,1 -n | \
+  while read line; do
+    local IFS="${TAB}"
+    set -- ${line}
+    local when="$(${display} "${1}")"
+    local what="${2}"
+    local memo="${3-}"
+    echo "${when}${TAB}${what}${TAB}${memo}"
+  done
+}
+
+Add() {
+  # TODO: getopt
+  # TODO: non-interactive option (e.g. add [what] [when] [memo])
+
+  local what when memo
+
+  echo "What:"
+  choise what $(List -n | cut -f2)
+
+  echo "When:"
+  local now="$(date +%s)"
+  local choises_for_when=(
+    "$(simple_time $((now - 3*24*60*60))) # (3days ago)"
+    "$(simple_time $((now - 2*24*60*60))) # (2days ago)"
+    "$(simple_time $((now - 1*24*60*60))) # (yesterday)"
+    "$(simple_time $((now - 0*24*60*60))) # (today)"
+  )
+  choise when "${choises_for_when[@]}"
+  when="$(TZ=GMT date +%s -d "${when}")"
+
+  printf "Memo: "
+  read memo
+
+  echo "$(simple_time "${when}")${TAB}${what}${TAB}${memo}"
+  if confirm "Append this entry?"; then
+    echo "${when}${TAB}${what}${TAB}${memo}" >> ${HISTORY_FILE}
+    echo "Finished"
+  else
+    echo "Canceled"
+  fi
+}
+
+Usage() {
+cat <<HERE
+Usage: ${0} COMMAND
+COMMANDS:
+  list [-n]
+  list yatta events
+    -n    show date in unix time
+
+  history
+  show all yatta events
+
+  add
+  add new yatta event
+HERE
+}
+
+# TODO: should treat "./yatta -x" as "./yatta list -x" ?
+command="${1-list}"
+shift || :
+
+case "${command}" in
+  list|ls|l) List "$@";;
+  history|hist|h) Hist "$@";;
+  add|a) Add "$@";;
+  help|h)
+    Usage;
+    exit 0;;
+  *)
+    echo "Unknown command '${command}'";
+    echo;
+    Usage;
+    exit 64;;  # EX_USAGE
+esac
